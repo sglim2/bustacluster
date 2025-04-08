@@ -1,0 +1,402 @@
+- name: Disable SELinux
+  ansible.builtin.command:
+    cmd: setenforce 0
+  become: true
+  ignore_errors: true
+
+- name: Permanently disable SELinux
+  ansible.builtin.replace:
+    path: /etc/selinux/config
+    regexp: '^SELINUX=.*'
+    replace: 'SELINUX=disabled'
+  become: true
+
+- name: Add epel-release repo
+  ansible.builtin.dnf:
+    name: epel-release
+    state: present
+
+- name: enable powertools 
+  ansible.builtin.command:  
+    cmd: dnf config-manager --set-enabled powertools
+
+- name: Add additional packages
+  ansible.builtin.dnf:
+    name: 
+      - "@Development tools"
+      - bash-completion
+      - bind-utils
+      - firewalld
+      - git
+      - iproute-tc
+      - munge
+      - munge-devel
+      - net-tools
+      - nfs-utils
+      - openssh-clients
+      - pam-devel
+      - perl
+      - python39
+      - python39-devel
+      - readline-devel
+    state: present
+
+- name: Install additional packages - headnode
+  ansible.builtin.dnf:
+    name:
+      - mariadb-server
+      - mariadb-devel
+    state: present
+  when: "'headnode' in group_names"
+  become: true
+
+- name: Configure and start MariaD
+  block:
+  - name: Enable and start MariaDB
+    ansible.builtin.systemd:
+      name: mariadb
+      enabled: true
+      state: started
+    when: "'headnode' in group_names"
+    become: true
+
+- name: Secure MariaDB installation                                                                                                                                                                                                                                                           
+  ansible.builtin.shell: |                                                                                                                                                                                                                                                                    
+          mysql -u root -e "DELETE FROM mysql.user WHERE User=''"                                                                                                                                                                                                                                   
+          mysql -u root -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1')"                                                                                                                                                                             
+          mysql -u root -e "DROP DATABASE IF EXISTS test"                                                                                                                                                                                                                                           
+          mysql -u root -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%'"                                                                                                                                                                                                                  
+          mysql -u root -e "FLUSH PRIVILEGES"                                                                                                                                                                                                                                                       
+          mysql -u root -e "create database slurm_accounting"                                                                                                                                                                                                                                       
+          mysql -u root -e "CREATE USER 'slurm_accounting'@'localhost' IDENTIFIED BY 'new_password'"                                                                                                                                                                                                
+          mysql -u root -e "GRANT ALL ON slurm_accounting.* TO 'slurm_accounting'@'localhost'"                                                                                                                                                                                                      
+  when: "'headnode' in group_names"
+  become: true
+
+
+- name: Set up NFS exports
+  block:
+    - name: Ensure directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+      loop:
+        - /mnt/scratch
+        - /opt/software
+        - /opt/slurm
+      become: true
+
+    - name: Install NFS packages
+      ansible.builtin.dnf:
+        name: nfs-utils
+        state: present
+      when: "'headnode' in group_names"
+      become: true
+
+    - name: Ensure NFS exports file exists
+      ansible.builtin.file:
+        path: /etc/exports
+        state: touch
+      when: "'headnode' in group_names"
+      become: true
+
+    - name: Configure NFS exports for /home
+      ansible.builtin.lineinfile:
+        path: /etc/exports
+        line: "/home {{ item }}(rw,async,no_root_squash)"
+        create: yes
+      loop: "{{ groups['computenodes'] | map('extract', hostvars, 'ansible_host') | list }}"
+      when: "'headnode' in group_names"
+      become: true
+
+    - name: Configure NFS exports for /opt/software
+      ansible.builtin.lineinfile:
+        path: /etc/exports
+        line: "/opt/software {{ item }}(rw,async,no_root_squash)"
+        create: yes
+      loop: "{{ groups['computenodes'] | map('extract', hostvars, 'ansible_host') | list }}"
+      when: "'headnode' in group_names"
+      become: true
+
+    - name: Configure NFS exports for /opt/slurm
+      ansible.builtin.lineinfile:
+        path: /etc/exports
+        line: "/opt/slurm {{ item }}(rw,async,no_root_squash)"
+        create: yes
+      loop: "{{ groups['computenodes'] | map('extract', hostvars, 'ansible_host') | list }}"
+      when: "'headnode' in group_names"
+      become: true
+
+    - name: Configure NFS exports for /mnt/scratch
+      ansible.builtin.lineinfile:
+        path: /etc/exports
+        line: "/mnt/scratch {{ item }}(rw,async,no_root_squash)"
+        create: yes
+      loop: "{{ groups['computenodes'] | map('extract', hostvars, 'ansible_host') | list }}"
+      when: "'headnode' in group_names"
+      become: true
+
+    - name: Enable and start NFS server
+      ansible.builtin.systemd:
+        name: nfs-server
+        enabled: true
+        state: started
+      when: "'headnode' in group_names"
+      become: true
+
+
+- name: Configure Firewall for NFS
+  ansible.posix.firewalld:
+    zone: trusted
+    source: "{{ item }}"
+    permanent: true
+    state: enabled
+  loop: "{{ groups['computenodes'] | map('extract', hostvars, 'ansible_host') | list }}"
+  when: "'headnode' in group_names"
+  become: true
+
+
+- name: Copy and set permissions for munge key
+  block:
+    - name: Create Munge key
+      ansible.builtin.command:
+        cmd: "create-munge-key -f"
+      when: "'headnode' in group_names"
+      become: true
+
+    - name: Transfer munge.key from headnode to computenodes
+      synchronize:
+        src: /etc/munge/munge.key
+        dest: /etc/munge/munge.key
+      delegate_to: "{{ groups['headnode'][0] }}"
+      when: "'computenodes' in group_names"
+
+    - name: Enable and start munge
+      ansible.builtin.systemd:
+        name: munge
+        enabled: true
+        state: started
+      become: true
+
+- name: Mount NFS shares 
+  block:
+    - name: Ensure directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+      loop:
+        - /mnt/scratch
+        - /opt/software
+        - /opt/slurm
+      become: true
+
+    - name: Ensure /home is mounted via NFS
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        line: "{{ groups['headnode'][0] }}:/home /home nfs defaults 0 0"
+        state: present
+      become: true
+
+    - name: Ensure /opt/software is mounted via NFS
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        line: "{{ groups['headnode'][0] }}:/opt/software /opt/software nfs defaults 0 0"
+        state: present
+      become: true
+
+    - name: Ensure /opt/slurm is mounted via NFS
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        line: "{{ groups['headnode'][0] }}:/opt/slurm /opt/slurm nfs defaults 0 0"
+        state: present
+      become: true
+
+    - name: Ensure /mnt/scratch is mounted via NFS
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        line: "{{ groups['headnode'][0] }}:/mnt/scratch /mnt/scratch nfs defaults 0 0"
+        state: present
+      become: true
+
+    - name: Mount all NFS filesystems
+      ansible.builtin.command:
+        cmd: mount -a
+      become: true
+  when: "'computenodes' in group_names"
+
+- name: Set up slurm users/groups and folders
+  block:
+    - name: Create slurm group
+      group:
+        name: slurm
+        gid: 980
+        system: false
+    
+    - name: Create slurm user
+      user:
+        name: slurm
+        uid: 980
+        group: slurm
+        system: false
+        home: /var/lib/slurm
+        shell: /bin/bash
+        comment: "Slurm workload manager"
+        create_home: yes
+    
+    - name: Create slurm logs directory
+      file:
+        path: /var/log/slurm
+        state: directory
+        owner: slurm
+        group: slurm
+        mode: 0755
+        force: yes
+    
+    - name: Create slurm spool directory
+      file:
+        path: /var/spool/slurm
+        state: directory
+        owner: slurm
+        group: slurm
+        mode: 0755
+        force: yes
+
+- name: Build and install slurm RPMs on headnode
+  block:
+    - name: DNF install slurm dependencies
+      # This seems necessary at the time of writing even though
+      # it conflicts with later python packages installed above
+      ansible.builtin.dnf:
+        name: 
+          - python3
+          - python3-devel
+        state: present
+
+    - name: download slurm source
+      ansible.builtin.get_url:
+        url: "https://download.schedmd.com/slurm/slurm-{{ slurm_version }}.tar.bz2"
+        dest: /tmp/slurm-{{ slurm_version }}.tar.bz2
+      become: true
+
+    - name: build slurm RPMS
+      ansible.builtin.command:
+        cmd: rpmbuild -ta /tmp/slurm-{{ slurm_version }}.tar.bz2 --define "_topdir /home/rpmbuild"
+        creates: /home/rpmbuild/RPMS/x86_64/slurm-{{ slurm_version }}-1.el8.x86_64.rpm
+      become: true
+
+    - name: install slurm RPMS
+      ansible.builtin.command:
+        cmd: dnf install -y /home/rpmbuild/RPMS/x86_64/slurm-{{ slurm_version }}-1.el8.x86_64.rpm /home/rpmbuild/RPMS/x86_64/slurm-pam_slurm-{{ slurm_version }}-1.el8.x86_64.rpm /home/rpmbuild/RPMS/x86_64/slurm-slurmctld-{{ slurm_version }}-1.el8.x86_64.rpm /home/rpmbuild/RPMS/x86_64/slurm-slurmdbd-{{ slurm_version }}-1.el8.x86_64.rpm
+  when: "'headnode' in group_names"
+
+- name: Final slurm Configuration
+  block:
+
+    - name: create sym-link to /opt/slurm
+      ansible.builtin.file:
+        dest: /etc/slurm
+        src: /opt/slurm
+        state: link
+      become: true
+
+    - name: Push slurm configuration files
+      block:
+        # /etc/slurm directory is sym-linked to /opt/slurm
+        - name: Copy slurm.conf
+          ansible.builtin.copy:
+            src: files/slurm.conf
+            dest: /opt/slurm/slurm.conf
+          become: true
+
+        - name: Copy slurm-user.conf
+          ansible.builtin.copy:
+            src: files/slurm-user.conf
+            dest: /opt/slurm/slurm-user.conf
+          become: true
+
+        - name: Copy slurm-partitions.conf
+          ansible.builtin.copy:
+            src: files/slurm-partitions.conf
+            dest: /opt/slurm/slurm-partitions.conf
+          become: true
+
+        - name: Copy slurmdbd.conf
+          ansible.builtin.copy:
+            src: files/slurmdbd.conf
+            dest: /opt/slurm/slurmdbd.conf
+            owner: slurm
+            group: slurm
+            mode: '0600'
+          become: true
+
+        - name: ensure /etc/slurm/topology.conf exists
+          ansible.builtin.file:
+            path: /opt/slurm/topology.conf
+            state: touch
+          become: true
+
+        - name: ensure /etc/slurm/slurm-nodes.conf exists
+          ansible.builtin.file:
+            path: /opt/slurm/slurm-nodes.conf
+            state: touch
+          become: true
+      when: "'headnode' in group_names"
+
+- name: Start slurm on Compute Nodes
+  block:
+    - name: Install slurm RPMs
+      ansible.builtin.dnf:
+        name:
+          - /home/rpmbuild/RPMS/x86_64/slurm-{{ slurm_version }}-1.el8.x86_64.rpm
+          - /home/rpmbuild/RPMS/x86_64/slurm-pam_slurm-{{ slurm_version }}-1.el8.x86_64.rpm
+          - /home/rpmbuild/RPMS/x86_64/slurm-slurmd-{{ slurm_version }}-1.el8.x86_64.rpm 
+        state: present
+        disable_gpg_check: yes
+      become: true
+
+    - name: Generate slurm node configurations
+      command: "slurmd -C"
+      register: slurm_node_config
+      become: true
+      
+    - name: Append slurm node configurations to main config (throttled to 1 to avoid race condition)
+      ansible.builtin.lineinfile:
+        path: /etc/slurm/slurm-nodes.conf
+        line: "{{ slurm_node_config.stdout_lines[0] }}"
+      throttle: 1
+      become: true
+
+    - name: Start slurmd service
+      ansible.builtin.systemd:
+        name: slurmd
+        enabled: true
+        state: started
+      become: true
+  when: "'computenodes' in group_names"
+
+- name: Start slurm on Head Node
+  block:
+    - name: Start slurm services
+      block:
+        - name: Enable and start slurmdbd
+          ansible.builtin.systemd:
+            name: slurmdbd
+            enabled: true
+            state: started
+          become: true
+          when: "'headnode' in group_names"
+
+        - name: Enable and start slurmctld
+          ansible.builtin.systemd:
+            name: slurmctld
+            enabled: true
+            state: started
+          become: true
+          when: "'headnode' in group_names"
+
+- name: launch firewalld
+  service: name=firewalld state=started enabled=yes
+
+- name: set firewalld default zone to 'trusted'
+  command: firewall-cmd --set-default-zone=trusted
+

@@ -1,0 +1,31 @@
+- name: provision nodes
+  hosts: all
+
+  tasks:
+  - name: set up nfs folder1
+    file:
+      path: /mnt/data1/virt_export1
+      state: directory
+      owner: root
+      group: root
+
+
+  - name: set up nfs folder2
+    file:
+      path: /mnt/data1/virt_export2
+      state: directory
+      owner: root
+      group: root
+
+  - name: nfs configs1
+    shell: 'echo "/mnt/data1/virt_export1 192.168.122.0/24(rw,async,no_root_squash)" > /etc/exports.d/virt.exports'
+
+  - name: nfs configs2
+    shell: 'echo "/mnt/data1/virt_export2 192.168.122.0/24(rw,async,no_root_squash)" >> /etc/exports.d/virt.exports'
+
+  - name: start nfs service
+    service:
+      name: nfs-server
+      enabled: yes
+      state: started
+

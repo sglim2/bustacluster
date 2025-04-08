@@ -1,0 +1,16 @@
+- name: provision longhorn
+  hosts: all
+
+  tasks:
+  - name: Add additional packages for longhorn
+    ansible.builtin.dnf:
+      name: 
+        - iscsi-initiator-utils
+        - jq
+        - nfs-utils 
+      state: present
+
+  - name: launch iscsid
+    service: name=iscsid state=started enabled=yes
+
+
