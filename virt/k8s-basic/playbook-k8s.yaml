@@ -1,0 +1,90 @@
+- name: provision nodes
+  hosts: all
+  become: true
+
+  vars:
+    ssh_key_path: /root/.ssh/id_ed25519_kubecluster
+
+  tasks:
+    - name: Add additional packages for kubernetes
+      ansible.builtin.dnf:
+        name: 
+          - bash-completion
+          - bind-utils
+          - firewalld
+          - git
+          - iproute-tc
+          - openssh-clients
+          - python3
+          - python3-pip
+          - net-tools
+          - nfs-utils
+        state: present
+
+    - name: Ensure .ssh directory exists
+      ansible.builtin.file:
+        path: /root/.ssh
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+
+
+    - name: Generate SSH keypair on first node (if not exists)
+      ansible.builtin.shell: |
+        if [ ! -f "{{ ssh_key_path }}" ]; then
+          ssh-keygen -t ed25519 -N "" -f "{{ ssh_key_path }}"
+        fi
+      args:
+        creates: "{{ ssh_key_path }}"
+      when: inventory_hostname == groups['all'][0]
+
+
+    - name: Fetch public key from first node
+      ansible.builtin.fetch:
+        src: "{{ ssh_key_path }}.pub"
+        dest: "/tmp/kubecluster_id.pub"
+        flat: true
+      when: inventory_hostname == groups['all'][0]
+
+    - name: Read public key content from controller
+      ansible.builtin.set_fact:
+        pubkey: "{{ lookup('file', '/tmp/kubecluster_id.pub') }}"
+
+    - name: Add SSH public key to root authorized_keys
+      ansible.builtin.authorized_key:
+        user: root
+        key: "{{ pubkey }}"
+        manage_dir: yes
+
+    - name: Set up SSH client config to suppress prompts and use cluster key
+      ansible.builtin.copy:
+        dest: /root/.ssh/config
+        content: |
+          Host *
+              User root
+              IdentityFile /root/.ssh/id_ed25519_kubecluster
+              StrictHostKeyChecking no
+              UserKnownHostsFile /dev/null
+              IdentitiesOnly yes
+        owner: root
+        group: root
+        mode: '0600'
+
+- name: Copy kubeadm-cluster-install.sh to first VM
+  hosts: "{{ groups['all'][0] }}"
+  become: true
+
+  vars:
+    kubeadm_script_local: ../k8s-basic/kubeadm-cluster-install.sh
+    kubeadm_script_remote: /root/kubeadm-cluster-install.sh
+
+  tasks:
+    - name: Copy kubeadm-cluster-install.sh to first VM
+      ansible.builtin.copy:
+        src: "{{ kubeadm_script_local }}"
+        dest: "{{ kubeadm_script_remote }}"
+        mode: '0755'
+
+
+
