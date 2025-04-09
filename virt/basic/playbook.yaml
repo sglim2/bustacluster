@@ -12,7 +12,13 @@
   - name: enable powertools 
     ansible.builtin.command:  
       cmd: dnf config-manager --set-enabled powertools
+    when: ansible_distribution_major_version == "8"
 #      warn: false
+
+  - name: enable powertools 
+    ansible.builtin.command:  
+      cmd: dnf config-manager --set-enabled crb
+    when: ansible_distribution_major_version == "9"
 
   - name: Add additional packages
     ansible.builtin.dnf:

@@ -4,16 +4,17 @@
 
 
 CLUSTERNAME=${CLUSTERNAME:='basic'}
-IMAGENAME=${IMAGENAME:='rocky8virt-20G'}
+IMAGENAME=${IMAGENAME:='rocky9'}
 CLUSTEROSVARIANT=${CLUSTEROSVARIANT:-${IMAGENAME%%-*}}
 CLUSTERRAM=${CLUSTERRAM:=8192}
 CLUSTERVCPUS=${CLUSTERVCPUS:=6}
-#DISKRESIZE=${DISKRESIZE:=10}
+DISKRESIZE=${DISKRESIZE:=10}
 nVMS=${nVMS:=1}
 
 # create a vm image
 for i in $(seq 1 $nVMS); do
   virt-builder ${IMAGENAME} --format qcow2 --root-password password:virtpassword -o ${CLUSTERNAME}${i}.qcow2
+  qemu-img resize ${CLUSTERNAME}${i}.qcow2 +${DISKRESIZE} 
   qemu-img info ${CLUSTERNAME}${i}.qcow2
   virt-install --name ${CLUSTERNAME}${i} --memory ${CLUSTERRAM} --noautoconsole --vcpus ${CLUSTERVCPUS} --disk  ${CLUSTERNAME}${i}.qcow2 --import --os-variant ${CLUSTEROSVARIANT} --network bridge=virbr0
 done
