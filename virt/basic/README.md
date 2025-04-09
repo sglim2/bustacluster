@@ -12,7 +12,7 @@ IMAGENAME=rocky9
 CLUSTEROSVARIANT=rocky9
 CLUSTERRAM=8192 MB
 CLUSTERVCPUS=6 vCPUs
-DISKRESIZE=10G
+DISKSIZE=10G
 nVMS=1
 ```
 
@@ -21,7 +21,7 @@ Make sure ansible is installed.
 To adjust the default values, set the desired variables:
 
 ```bash
-CLUSTERNAME=mybasicVM DISKRESIZE=20G nVMS=3 bash deploy.sh
+CLUSTERNAME=mybasicVM DISKSIZE=20G nVMS=3 bash deploy.sh
 ```
 
 A VM disk image will be created in the current directory, named ```mybasic1.qcow2```, ```mybasic2.qcow2```, etc.

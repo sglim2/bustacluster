@@ -8,13 +8,12 @@ IMAGENAME=${IMAGENAME:='rocky9'}
 CLUSTEROSVARIANT=${CLUSTEROSVARIANT:-${IMAGENAME%%-*}}
 CLUSTERRAM=${CLUSTERRAM:=8192}
 CLUSTERVCPUS=${CLUSTERVCPUS:=6}
-DISKRESIZE=${DISKRESIZE:=10}
+DISKSIZE=${DISKSIZE:=10}
 nVMS=${nVMS:=1}
 
 # create a vm image
 for i in $(seq 1 $nVMS); do
-  virt-builder ${IMAGENAME} --format qcow2 --root-password password:virtpassword -o ${CLUSTERNAME}${i}.qcow2
-  qemu-img resize ${CLUSTERNAME}${i}.qcow2 +${DISKRESIZE} 
+  virt-builder ${IMAGENAME} --format qcow2 --root-password password:virtpassword --size=${DISKSIZE} -o ${CLUSTERNAME}${i}.qcow2
   qemu-img info ${CLUSTERNAME}${i}.qcow2
   virt-install --name ${CLUSTERNAME}${i} --memory ${CLUSTERRAM} --noautoconsole --vcpus ${CLUSTERVCPUS} --disk  ${CLUSTERNAME}${i}.qcow2 --import --os-variant ${CLUSTEROSVARIANT} --network bridge=virbr0
 done
@@ -44,7 +43,7 @@ for i in $(seq 1 $nVMS)
 do
  hostIP=$(virsh domifaddr ${CLUSTERNAME}${i} --source agent --full | grep "eth0" | grep "ipv4" | awk '{print $4}' | awk -F'/' '{print $1}' | tr '\n' ' ' )
  echo "${CLUSTERNAME}${i} ${hostIP}"
- ssh -i  ../repo-builder/imgs/bustacluster-key -o StrictHostKeyChecking=no root@${hostIP} hostnamectl set-hostname ${CLUSTERNAME}${i}
+ ssh root@${hostIP} hostnamectl set-hostname ${CLUSTERNAME}${i}
 done
 
 #================================================================================================
@@ -57,14 +56,14 @@ do
   for j in $(seq 1 $nVMS)
   do
     hostIP=$(virsh domifaddr ${CLUSTERNAME}${j} --source agent --full | grep "eth0" | grep "ipv4" | awk '{print $4}' | awk -F'/' '{print $1}' | tr '\n' ' ')
-    ssh -i  ../repo-builder/imgs/bustacluster-key -o StrictHostKeyChecking=no root@${connectIP} "echo ${hostIP} ${CLUSTERNAME}${j} >> /etc/hosts"
+    ssh root@${connectIP} "echo ${hostIP} ${CLUSTERNAME}${j} >> /etc/hosts"
   done
 done
 
 #================================================================================================
 # prepare node with ansible
-echo ansible-playbook -i $( echo "${IPS[*]}" ) ../basic/playbook.yaml --private-key ../repo-builder/imgs/bustacluster-key --ssh-extra-args=\"-o StrictHostKeyChecking=no\"
-ansible-playbook -i "$( IFS=$','; echo "${IPS[*]}", )"  ../basic/playbook.yaml --private-key ../repo-builder/imgs/bustacluster-key --ssh-extra-args="-o StrictHostKeyChecking=no"
+echo ansible-playbook -i $( echo "${IPS[*]}" ) ../basic/playbook.yaml 
+ansible-playbook -i "$( IFS=$','; echo "${IPS[*]}", )"  ../basic/playbook.yaml 
 
 
 #================================================================================================
@@ -72,7 +71,7 @@ ansible-playbook -i "$( IFS=$','; echo "${IPS[*]}", )"  ../basic/playbook.yaml -
 echo
 echo "To connect:"
 for ip in ${IPS[*]}; do
-  echo "ssh -i ../repo-builder/imgs/bustacluster-key -o StrictHostKeyChecking=no root@${ip}"
+  echo "ssh  root@${ip}"
 done
 
 echo
