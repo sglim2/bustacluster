@@ -24,7 +24,7 @@ To adjust the default values, set the desired variables:
 CLUSTERNAME=mybasicVM DISKSIZE=20G nVMS=3 bash deploy.sh
 ```
 
-A VM disk image will be created in the current directory, named ```mybasic1.qcow2```, ```mybasic2.qcow2```, etc.
+A VM disk image will be created in the current directory, named ```mybasicVM1.qcow2```, ```mybasicVM2.qcow2```, etc.
 
 
 
