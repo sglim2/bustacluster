@@ -1,1 +1,5 @@
 *.qcow2
+ca.crt
+ca.key
+instruct*.txt
+kube.config
