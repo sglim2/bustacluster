@@ -21,11 +21,11 @@ echo "IMAGENAME       = $IMAGENAME"
 echo "nVMS            = $nVMS"
 echo "=================================="
 
-echo "nfs: create a new scratch volume"
-qemu-img create -f qcow2 -o lazy_refcounts=on,preallocation=metadata  ${CLUSTERNAME}1-scratch.qcow2 ${SCRATCHDISKSIZE}
+echo "nfs: create a new data volume"
+qemu-img create -f qcow2 -o lazy_refcounts=on,preallocation=metadata  ${CLUSTERNAME}1-data.qcow2 ${SCRATCHDISKSIZE}
 
-echo "nfs: attach scratch disk"
-virsh attach-disk --domain ${CLUSTERNAME}1 --source ${PWD}/${CLUSTERNAME}1-scratch.qcow2 --target vdb --persistent
+echo "nfs: attach data disk"
+virsh attach-disk --domain ${CLUSTERNAME}1 --source ${PWD}/${CLUSTERNAME}1-data.qcow2 --target vdb --persistent
 
 #================================================================================================
 echo "nfs: mount the disks" 
@@ -34,9 +34,9 @@ parted /dev/vdb mklabel gpt
 parted -a optimal /dev/vdb mkpart primary 0% 100%
 mkfs.xfs  /dev/vdb1
 
-mkdir -p /mnt/scratch
-mount /dev/vdb1 /mnt/scratch
-echo "UUID=$(blkid -o value /dev/vdb1 -s UUID) /mnt/scratch xfs defaults 0 0" >> /etc/fstab
+mkdir -p /mnt/data
+mount /dev/vdb1 /mnt/data
+echo "UUID=$(blkid -o value /dev/vdb1 -s UUID) /mnt/data xfs defaults 0 0" >> /etc/fstab
 
 EOF_nfs
 
