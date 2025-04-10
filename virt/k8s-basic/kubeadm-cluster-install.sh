@@ -202,6 +202,11 @@ echo "install containerd"
 echo "###################"
 mkdir -p /etc/containerd
 containerd config default > /etc/containerd/config.toml
+# rocky9 now seems to need this setting..
+#   tested with rocky9/k8s1.29.13
+# (tells containerd to use systemd for managing control 
+#  groups - which is what kubelet now expects by default)
+sed -i 's/SystemdCgroup = false/SystemdCgroup = true/g' /etc/containerd/config.toml
 systemctl enable --now  containerd
 
 systemctl enable --now kubelet
