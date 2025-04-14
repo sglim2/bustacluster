@@ -1,7 +1,7 @@
 - name: provision nodes
   hosts: all
   vars:
-    python_interpreter: /usr/bin/python3
+    ansible_python_interpreter: /usr/bin/python3
 
   tasks:
   - name: Add epel-release repo
