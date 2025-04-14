@@ -2,6 +2,8 @@
 
 BustaCluster a collection of wrapper scripts that build virtual HPC/Cloud clusters (e.g. a slurm cluster, kubernetes, ceph). The project is a way of experimenting with clusters, their configuration, and test scenarios and configurations in a non-production environment. All VMs are created using libvirt virtualisation, using tools like virt-builder and virsh. 
 
+Some aspects of the cluster builds are based on ansible playbooks, but clusters are mostly built via bash script command for testing various cluster configurations.
+
 The clusters are not designed as production quality, and will often lack features that would be required in a production environment.
 
 
