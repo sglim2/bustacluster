@@ -12,13 +12,24 @@
   become: true
 
 - name: Add epel-release repo
+  ansible.builtin.command: dnf install -y epel-release
+  when: ansible_distribution_major_version == "8"
+
+- name: Add epel-release repo 
   ansible.builtin.dnf:
     name: epel-release
     state: present
+  when: ansible_distribution_major_version >= "9"
 
 - name: enable powertools 
   ansible.builtin.command:  
     cmd: dnf config-manager --set-enabled powertools
+  when: ansible_distribution_major_version == "8"
+
+- name: enable powertools 
+  ansible.builtin.command:  
+    cmd: dnf config-manager --set-enabled crb
+  when: ansible_distribution_major_version >= "9"
 
 - name: Add additional packages
   ansible.builtin.dnf:
@@ -26,6 +37,7 @@
       - "@Development tools"
       - bash-completion
       - bind-utils
+      - dbus-devel
       - firewalld
       - git
       - iproute-tc
@@ -36,10 +48,20 @@
       - openssh-clients
       - pam-devel
       - perl
-      - python39
-      - python39-devel
+      - python3
+      - python3-devel
       - readline-devel
+      - s-nail
     state: present
+  when: ansible_distribution_major_version >= "9"
+
+- name: Install required packages
+  ansible.builtin.command: >
+    dnf install -y
+     @"Development tools" bash-completion bind-utils firewalld git iproute-tc
+     munge munge-devel net-tools nfs-utils openssh-clients pam-devel perl
+    python3 python3-devel readline-devel
+  when: ansible_distribution_major_version == "8"
 
 - name: Install additional packages - headnode
   ansible.builtin.dnf:
@@ -47,8 +69,12 @@
       - mariadb-server
       - mariadb-devel
     state: present
-  when: "'headnode' in group_names"
+  when: "'headnode' in group_names and ansible_distribution_major_version >= '9'"
   become: true
+
+- name: Install MariaDB packages on headnode
+  ansible.builtin.command: dnf install -y mariadb-server mariadb-devel
+  when: "'headnode' in group_names and ansible_distribution_major_version == '8'"
 
 - name: Configure and start MariaD
   block:
@@ -84,13 +110,6 @@
         - /mnt/scratch
         - /opt/software
         - /opt/slurm
-      become: true
-
-    - name: Install NFS packages
-      ansible.builtin.dnf:
-        name: nfs-utils
-        state: present
-      when: "'headnode' in group_names"
       become: true
 
     - name: Ensure NFS exports file exists
@@ -145,6 +164,13 @@
       become: true
 
 
+- name: Enable and start firewalld
+  ansible.builtin.systemd_service:
+    name: firewalld
+    enabled: true
+    state: started
+  become: true
+
 - name: Configure Firewall for NFS
   ansible.posix.firewalld:
     zone: trusted
@@ -152,9 +178,23 @@
     permanent: true
     state: enabled
   loop: "{{ groups['computenodes'] | map('extract', hostvars, 'ansible_host') | list }}"
-  when: "'headnode' in group_names"
+  when: "'headnode' in group_names and ansible_distribution_major_version >= '9'"
   become: true
 
+- name: Configure Firewall for NFS (Rocky 8 using firewall-cmd)
+  ansible.builtin.command: >
+    firewall-cmd --permanent --zone=trusted --add-source={{ item }}
+  loop: "{{ groups['computenodes'] | map('extract', hostvars, 'ansible_host') | list }}"
+  when: "'headnode' in group_names and ansible_distribution_major_version == '8'"
+  become: true
+
+- name: Enable and start firewalld
+  ansible.builtin.systemd_service:
+    state: restarted
+    daemon_reload: true
+    name: firewalld
+    enabled: true
+  become: true
 
 - name: Copy and set permissions for munge key
   block:
@@ -263,14 +303,15 @@
 
 - name: Build and install slurm RPMs on headnode
   block:
-    - name: DNF install slurm dependencies
-      # This seems necessary at the time of writing even though
-      # it conflicts with later python packages installed above
-      ansible.builtin.dnf:
-        name: 
-          - python3
-          - python3-devel
-        state: present
+#    - name: DNF install slurm dependencies
+#      # This seems necessary at the time of writing even though
+#      # it conflicts with later python packages installed above
+#      ansible.builtin.dnf:
+#        name: 
+#          - python3
+#          - python3-devel
+#        state: present
+#    when: ansible_distribution_major_version >= "9"
 
     - name: download slurm source
       ansible.builtin.get_url:
@@ -281,12 +322,12 @@
     - name: build slurm RPMS
       ansible.builtin.command:
         cmd: rpmbuild -ta /tmp/slurm-{{ slurm_version }}.tar.bz2 --define "_topdir /home/rpmbuild"
-        creates: /home/rpmbuild/RPMS/x86_64/slurm-{{ slurm_version }}-1.el8.x86_64.rpm
+        creates: /home/rpmbuild/RPMS/x86_64/slurm-{{ slurm_version }}-1.el{{ ansible_distribution_major_version }}.x86_64.rpm
       become: true
 
     - name: install slurm RPMS
       ansible.builtin.command:
-        cmd: dnf install -y /home/rpmbuild/RPMS/x86_64/slurm-{{ slurm_version }}-1.el8.x86_64.rpm /home/rpmbuild/RPMS/x86_64/slurm-pam_slurm-{{ slurm_version }}-1.el8.x86_64.rpm /home/rpmbuild/RPMS/x86_64/slurm-slurmctld-{{ slurm_version }}-1.el8.x86_64.rpm /home/rpmbuild/RPMS/x86_64/slurm-slurmdbd-{{ slurm_version }}-1.el8.x86_64.rpm
+        cmd: dnf install -y /home/rpmbuild/RPMS/x86_64/slurm-{{ slurm_version }}-1.el{{ ansible_distribution_major_version }}.x86_64.rpm /home/rpmbuild/RPMS/x86_64/slurm-pam_slurm-{{ slurm_version }}-1.el{{ ansible_distribution_major_version }}.x86_64.rpm /home/rpmbuild/RPMS/x86_64/slurm-slurmctld-{{ slurm_version }}-1.el{{ ansible_distribution_major_version }}.x86_64.rpm /home/rpmbuild/RPMS/x86_64/slurm-slurmdbd-{{ slurm_version }}-1.el{{ ansible_distribution_major_version }}.x86_64.rpm
   when: "'headnode' in group_names"
 
 - name: Final slurm Configuration
@@ -329,6 +370,12 @@
             mode: '0600'
           become: true
 
+        - name: Copy cgroups.conf
+          ansible.builtin.copy:
+            src: files/cgroups.conf
+            dest: /opt/slurm/cgroups.conf
+          become: true
+
         - name: ensure /etc/slurm/topology.conf exists
           ansible.builtin.file:
             path: /opt/slurm/topology.conf
@@ -347,12 +394,18 @@
     - name: Install slurm RPMs
       ansible.builtin.dnf:
         name:
-          - /home/rpmbuild/RPMS/x86_64/slurm-{{ slurm_version }}-1.el8.x86_64.rpm
-          - /home/rpmbuild/RPMS/x86_64/slurm-pam_slurm-{{ slurm_version }}-1.el8.x86_64.rpm
-          - /home/rpmbuild/RPMS/x86_64/slurm-slurmd-{{ slurm_version }}-1.el8.x86_64.rpm 
+          - /home/rpmbuild/RPMS/x86_64/slurm-{{ slurm_version }}-1.el{{ ansible_distribution_major_version }}.x86_64.rpm
+          - /home/rpmbuild/RPMS/x86_64/slurm-pam_slurm-{{ slurm_version }}-1.el{{ ansible_distribution_major_version }}.x86_64.rpm
+          - /home/rpmbuild/RPMS/x86_64/slurm-slurmd-{{ slurm_version }}-1.el{{ ansible_distribution_major_version }}.x86_64.rpm 
         state: present
         disable_gpg_check: yes
+      when: ansible_distribution_major_version >= "9"
       become: true
+
+    - name: install slurm RPMS
+      ansible.builtin.command:
+        cmd: dnf install -y /home/rpmbuild/RPMS/x86_64/slurm-{{ slurm_version }}-1.el{{ ansible_distribution_major_version }}.x86_64.rpm /home/rpmbuild/RPMS/x86_64/slurm-pam_slurm-{{ slurm_version }}-1.el{{ ansible_distribution_major_version }}.x86_64.rpm /home/rpmbuild/RPMS/x86_64/slurm-slurmd-{{ slurm_version }}-1.el{{ ansible_distribution_major_version }}.x86_64.rpm
+      when: ansible_distribution_major_version == "8"
 
     - name: Generate slurm node configurations
       command: "slurmd -C"
@@ -361,8 +414,10 @@
       
     - name: Append slurm node configurations to main config (throttled to 1 to avoid race condition)
       ansible.builtin.lineinfile:
-        path: /etc/slurm/slurm-nodes.conf
+        path: /opt/slurm/slurm-nodes.conf
         line: "{{ slurm_node_config.stdout_lines[0] }}"
+        state: present
+        create: yes
       throttle: 1
       become: true
 
