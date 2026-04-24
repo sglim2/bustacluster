@@ -4,7 +4,7 @@
 
 
 CLUSTERNAME=${CLUSTERNAME:='basic'}
-IMAGENAME=${IMAGENAME:='rocky9'}
+IMAGENAME=${IMAGENAME:='rocky10'}
 CLUSTEROSVARIANT=${CLUSTEROSVARIANT:-${IMAGENAME%%-*}}
 CLUSTERRAM=${CLUSTERRAM:=8192}
 CLUSTERVCPUS=${CLUSTERVCPUS:=6}
@@ -26,7 +26,13 @@ declare -a IPS=()
 until [ ${#IPS[@]} -eq "$nVMS" ]
 do
   echo "Checking for existence of VM IPs.."
-  IPS=($(for i in $(seq 1 $nVMS) ; do virsh domifaddr ${CLUSTERNAME}${i} --source agent --full | grep "eth0" | grep "ipv4" | awk '{print $4}' | awk -F'/' '{print $1}' | tr '\n' ' ' ; done ))
+  IPS=($(for i in $(seq 1 $nVMS) ; do virsh domifaddr ${CLUSTERNAME}${i} --source agent --full | awk '
+      $1 != "lo" && $3 == "ipv4" {
+        split($4, a, "/")
+        print a[1]
+        exit
+      }
+    ' ; done ))
   echo "${IPS[*]}"
   sleep 10
   if [ $istep -ge "$steplimit" ] ; then
@@ -41,7 +47,13 @@ done
 echo "Setting hostname(s)"
 for i in $(seq 1 $nVMS)
 do
- hostIP=$(virsh domifaddr ${CLUSTERNAME}${i} --source agent --full | grep "eth0" | grep "ipv4" | awk '{print $4}' | awk -F'/' '{print $1}' | tr '\n' ' ' )
+ hostIP=$(virsh domifaddr ${CLUSTERNAME}${i} --source agent --full | awk '
+      $1 != "lo" && $3 == "ipv4" {
+        split($4, a, "/")
+        print a[1]
+        exit
+      }
+    ')
  echo "${CLUSTERNAME}${i} ${hostIP}"
  ssh root@${hostIP} hostnamectl set-hostname ${CLUSTERNAME}${i}
 done
@@ -51,11 +63,23 @@ done
 echo "Setting /etc/hosts"
 for i in $(seq 1 $nVMS)
 do
-  connectIP=$(virsh domifaddr ${CLUSTERNAME}${i} --source agent --full | grep "eth0" | grep "ipv4" | awk '{print $4}' | awk -F'/' '{print $1}' | tr '\n' ' ' )
+  connectIP=$(virsh domifaddr ${CLUSTERNAME}${i} --source agent --full | awk '
+      $1 != "lo" && $3 == "ipv4" {
+        split($4, a, "/")
+        print a[1]
+        exit
+      }
+    ')
   echo "${connectIP} ${CLUSTERNAME}${i}"
   for j in $(seq 1 $nVMS)
   do
-    hostIP=$(virsh domifaddr ${CLUSTERNAME}${j} --source agent --full | grep "eth0" | grep "ipv4" | awk '{print $4}' | awk -F'/' '{print $1}' | tr '\n' ' ')
+    hostIP=$(virsh domifaddr ${CLUSTERNAME}${j} --source agent --full | awk '
+      $1 != "lo" && $3 == "ipv4" {
+        split($4, a, "/")
+        print a[1]
+        exit
+      }
+    ')
     ssh root@${connectIP} "echo ${hostIP} ${CLUSTERNAME}${j} >> /etc/hosts"
   done
 done
