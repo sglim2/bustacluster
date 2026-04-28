@@ -10,18 +10,19 @@ CLUSTERNAME=${CLUSTERNAME:=k8s}
 withCNI=${withCNI:=cilium}
 withPROMETHEUS=${withPROMETHEUS:=0}
 withMETRICS=${withMETRICS:=0}
-kubeVER=${kubeVER:=1.32.0}
+kubeVER=${kubeVER:=1.36.0}
 maxpods=${maxpods:=110}
 
 nVMS=${nVMS:=3}
-IMAGENAME=${IMAGENAME:='rocky9'}
+IMAGENAME=${IMAGENAME:='ubuntu24.04'}
+CLUSTEROSVARIANT=${CLUSTEROSVARIANT:='ubuntunoble'}
 
 source ../basic/deploy.sh
 
 #================================================================================================
 # prepare node with ansible
-echo ansible-playbook -i $( echo "${IPS[*]}" ) ../k8s-basic/playbook-k8s.yaml
-ansible-playbook -i "$( IFS=$','; echo "${IPS[*]}", )"  ../k8s-basic/playbook-k8s.yaml 
+echo ansible-playbook -i $( echo "${IPS[*]}" ) ../k8s-basic/playbook-k8s-2.yaml
+ansible-playbook -i "$( IFS=$','; echo "${IPS[*]}", )"  ../k8s-basic/playbook-k8s-2.yaml 
 #================================================================================================
 
 
@@ -42,8 +43,9 @@ echo "=================================="
 # The kubeadm-cluster-install.sh script can, theoretically, be run from any host with passwordless ssh access to all nodes
 # However, we avoid running from the host OS in case it makes any undesirable changes to the host OS.
 #
-# The ansible playboos has already copied the kubeadm-cluster-install.sh script to the first node.
+# The ansible playbook has already copied the kubeadm-cluster-install.sh script to the first node.
 ssh root@${IPS[0]} <<EOF_kubeadm
+echo kubeVER=$kubeVER withMETRICS=$withMETRICS withPROMETHEUS=$withPROMETHEUS CLUSTERNAME=$CLUSTERNAME withCNI=$withCNI maxpods=$maxpods nodes="$(echo ${IPS[@]})" nodesIP="$(echo ${IPS[@]})" /root/kubeadm-cluster-install.sh
 kubeVER=$kubeVER withMETRICS=$withMETRICS withPROMETHEUS=$withPROMETHEUS CLUSTERNAME=$CLUSTERNAME withCNI=$withCNI maxpods=$maxpods nodes="$(echo ${IPS[@]})" nodesIP="$(echo ${IPS[@]})" /root/kubeadm-cluster-install.sh
 EOF_kubeadm
 
@@ -59,6 +61,15 @@ echo "To use the cluster:" | tee -a instruct-${CLUSTERNAME}.txt
 echo "  export KUBECONFIG=$(pwd)/kube.config" | tee -a instruct-${CLUSTERNAME}.txt
 
 #================================================================================================
+
+
+echo "rebooting nodes..." 
+for ip in ${IPS[*]}; do
+  echo "rebooting ${ip}...$(date)"
+  ssh root@${ip} reboot
+done
+
+
 
 echo | tee -a instruct-${CLUSTERNAME}.txt
 echo "To connect:" | tee -a instruct-${CLUSTERNAME}.txt

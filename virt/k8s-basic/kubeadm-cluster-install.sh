@@ -105,7 +105,15 @@ fi
 
 # basic packages
 echo "install base packages"
-for i in ${nodes[@]} ; do ssh $i dnf install -y epel-release  git openssh-clients python3 python3-pip  bash-completion nfs-utils; done 
+for i in ${nodes[@]} ; do ssh $i <<'EOF_base_packages'
+source /etc/os-release
+if [[ "${ID_LIKE}" == *"debian"* ]]; then
+  apt-get update && apt-get install -y git openssh-client python3 python3-pip  bash-completion nfs-common
+else
+  dnf install -y epel-release  git openssh-clients python3 python3-pip  bash-completion nfs-utils 
+fi
+EOF_base_packages
+done
 
 # Firewall from k8s internal networks =====================
 for i in ${nodes[@]} ; do ssh $i "( systemctl enable --now firewalld )" ; done
@@ -118,6 +126,9 @@ do
     ssh $i "( firewall-cmd --zone=trusted --add-source=$j)" 
   done
 done
+# assume all nodes have the same interface name
+NIC=$(ssh ${nodes[0]} "ip -o addr show | grep ${nodesIP[0]} | awk '{print \$2}'")
+for i in ${nodes[@]} ; do ssh $i "firewall-cmd --zone=trusted --add-interface=$NIC --permanent; firewall-cmd --reload" ; done
 for i in ${nodes[@]} ; do ssh $i "( firewall-cmd --runtime-to-permanent)" ; done
 # ==========================================================
 
@@ -132,85 +143,113 @@ echo disable swap
 for i in ${nodes[@]} ; do ssh $i "(swapoff -a; sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab)" ; done
 
 echo "install container runtime"
+ID_LIKE=$(ssh ${nodes[0]} cat /etc/os-release | grep ID_LIKE | awk -F= '{print $2}')
 for i in ${nodes[@]} ; do 
 ssh $i <<EOF_allnodes
 
-dnf install -y yum-utils
+if [[ "${ID_LIKE}" == *"debian"* ]]; then
 
-echo "###################"
-echo "disable SELINUX"
-echo "###################"
-sudo setenforce 0
-sudo sed -i 's/^SELINUX=.*/SELINUX=permissive/g' /etc/selinux/config
-
-
-echo "###################"
-echo "install k8s yum repo"
-echo "###################"
-
-# old repo location ( 2023 and earlier)
-#sudo tee /etc/yum.repos.d/kubernetes.repo<<EOF
-#[kubernetes]
-#name=Kubernetes
-#baseurl=https://packages.cloud.google.com/yum/repos/kubernetes-el7-x86_64
-#enabled=1
-#gpgcheck=1
-#repo_gpgcheck=1
-#gpgkey=https://packages.cloud.google.com/yum/doc/yum-key.gpg https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
-#EOF
-
-# new repo location - 2024 onwards
-sudo tee /etc/yum.repos.d/kubernetes.repo <<EOF
-[kubernetes]
-name=Kubernetes
-baseurl=https://pkgs.k8s.io/core:/stable:/v${kubeMAJVER}/rpm/
-enabled=1
-gpgcheck=1
-gpgkey=https://pkgs.k8s.io/core:/stable:/v${kubeMAJVER}/rpm/repodata/repomd.xml.key
-exclude=kubelet kubeadm kubectl cri-tools kubernetes-cni
+  cat <<EOF | tee /etc/modules-load.d/k8s.conf
+overlay
+br_netfilter
 EOF
 
+  modprobe overlay
+  modprobe br_netfilter
 
-echo "###################"
-echo "install k8s docker repo (for containerd)"
-echo "###################"
-yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
-
-echo "###################"
-echo "install packages"
-echo "###################"
-dnf -y install epel-release vim git curl wget tar
-dnf update -y 
-dnf install -y containerd.io
-dnf install -y kubelet-${kubeVER} kubeadm-${kubeVER} kubectl-${kubeVER} --disableexcludes=kubernetes
-dnf install -y yum-utils device-mapper-persistent-data lvm2
-
-
-sudo modprobe overlay
-sudo modprobe br_netfilter
-
-sudo tee /etc/sysctl.d/kubernetes.conf<<EOF
+  cat <<EOF | tee /etc/sysctl.d/kubernetes.conf
+net.bridge.bridge-nf-call-iptables  = 1
 net.bridge.bridge-nf-call-ip6tables = 1
-net.bridge.bridge-nf-call-iptables = 1
-net.ipv4.ip_forward = 1
+net.ipv4.ip_forward                 = 1
 EOF
 
-sudo sysctl --system
+  sysctl --system
 
-echo "###################"
-echo "install containerd"
-echo "###################"
-mkdir -p /etc/containerd
-containerd config default > /etc/containerd/config.toml
+  apt-get update && apt-get install -y apt-transport-https ca-certificates curl gnupg
+
+  curl -fsSL https://pkgs.k8s.io/core:/stable:/v${kubeMAJVER}/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+  chmod 644 /etc/apt/keyrings/kubernetes-apt-keyring.gpg 
+
+  echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.36/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
+  chmod 644 /etc/apt/sources.list.d/kubernetes.list 
+
+  apt-get update
+  apt-get install -y kubectl kubelet kubeadm
+  apt-mark hold kubelet kubeadm kubectl
+
+  apt-get install -y cri-tools containerd
+  mkdir -p /etc/containerd
+  containerd config default | sudo tee /etc/containerd/config.toml
+
+  sed -i 's/SystemdCgroup = false/SystemdCgroup = true/g' /etc/containerd/config.toml
+
+  systemctl enable --now containerd
+
+
+else 
+  dnf install -y yum-utils
+
+  echo "###################"
+  echo "disable SELINUX"
+  echo "###################"
+  sudo setenforce 0
+  sudo sed -i 's/^SELINUX=.*/SELINUX=permissive/g' /etc/selinux/config
+
+  echo "###################"
+  echo "install k8s yum repo"
+  echo "###################"
+
+  # new repo location - 2024 onwards
+  sudo tee /etc/yum.repos.d/kubernetes.repo <<EOF
+  [kubernetes]
+  name=Kubernetes
+  baseurl=https://pkgs.k8s.io/core:/stable:/v${kubeMAJVER}/rpm/
+  enabled=1
+  gpgcheck=1
+  gpgkey=https://pkgs.k8s.io/core:/stable:/v${kubeMAJVER}/rpm/repodata/repomd.xml.key
+  exclude=kubelet kubeadm kubectl cri-tools kubernetes-cni
+EOF
+
+  echo "###################"
+  echo "install k8s docker repo (for containerd)"
+  echo "###################"
+  yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+
+  echo "###################"
+  echo "install packages"
+  echo "###################"
+  dnf -y install epel-release vim git curl wget tar
+  dnf update -y 
+  dnf install -y containerd.io
+  dnf install -y kubelet-${kubeVER} kubeadm-${kubeVER} kubectl-${kubeVER} --disableexcludes=kubernetes
+  dnf install -y yum-utils device-mapper-persistent-data lvm2
+
+
+  sudo modprobe overlay
+  sudo modprobe br_netfilter
+
+  sudo tee /etc/sysctl.d/kubernetes.conf<<EOF
+  net.bridge.bridge-nf-call-ip6tables = 1
+  net.bridge.bridge-nf-call-iptables = 1
+  net.ipv4.ip_forward = 1
+EOF
+
+  sudo sysctl --system
+
+  echo "###################"
+  echo "install containerd"
+  echo "###################"
+  mkdir -p /etc/containerd
+  containerd config default > /etc/containerd/config.toml
 # rocky9 now seems to need this setting..
 #   tested with rocky9/k8s1.29.13
 # (tells containerd to use systemd for managing control 
 #  groups - which is what kubelet now expects by default)
-sed -i 's/SystemdCgroup = false/SystemdCgroup = true/g' /etc/containerd/config.toml
-systemctl enable --now  containerd
+  sed -i 's/SystemdCgroup = false/SystemdCgroup = true/g' /etc/containerd/config.toml
+  systemctl enable --now  containerd
 
-systemctl enable --now kubelet
-
+  systemctl enable --now kubelet
+fi
 
 EOF_allnodes
 done
@@ -289,17 +328,31 @@ if [ ${withCNI,,} == "cilium"  ] ; then
   echo "=================================="
   # apply the cni
 
-  ssh ${nodes[0]} <<EOF_cilium
+  ssh ${nodes[0]} <<'EOF_cilium'
 curl -L --remote-name-all https://github.com/cilium/cilium-cli/releases/latest/download/cilium-linux-amd64.tar.gz{,.sha256sum}
 sha256sum --check cilium-linux-amd64.tar.gz.sha256sum
 tar xzvfC cilium-linux-amd64.tar.gz /usr/local/bin
-rm cilium-linux-amd64.tar.gz{,.sha256sum}
+rm -f cilium-linux-amd64.tar.gz{,.sha256sum}
 #
 #
 # Note: without the '--helm-set ipam.mode=kubernetes' flag, cilium will not honour the k8s podCIDR settings,
 #       instead will default to it's own cidr range which is shared across the cluster (ipam.mode=kubernetes 
 #       uses subset ranges for each cluster node)
+#
+# the following (limited) command required additional parameters to be applied post-install
 cilium install --helm-set ipam.mode=kubernetes
+#
+# Instead of the above, now use the below command which applies the necessary settings during install
+#CILIUM_VERSION=$(cilium version | awk '/cilium image \(default\)/ {print $4}')
+#echo "Installing cilium version ${CILIUM_VERSION}"
+#cilium install \
+#  --version ${CILIUM_VERSION} \
+#  --helm-set ipam.mode=kubernetes \
+#  --helm-set kubeProxyReplacement=false \
+#  --helm-set k8sServiceHost=${nodes[0]} \
+#  --helm-set k8sServicePort=6443 \
+#  --helm-set enableIPv4Masquerade=true
+
 EOF_cilium
  
   echo "=================================="

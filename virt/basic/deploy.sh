@@ -20,9 +20,12 @@ nVMS=${nVMS:=1}
 # create a vm image
 for i in $(seq 1 $nVMS); do
   if [[ "$IMAGENAME" =~ ^(ubuntu|debian) ]]; then
-    # for ubuntu and debian, we need to set the username and password
+    # for ubuntu and debian...
     virt-builder ${IMAGENAME} --format qcow2 -o ${CLUSTERNAME}${i}.qcow2
+    
     qemu-img resize ${CLUSTERNAME}${i}.qcow2 ${DISKSIZE}
+    # when exposed via libguestfs, the partition is /dev/sda, but when booted and exposed by the kernel, it will be /dev/vda
+    virt-customize -a ${CLUSTERNAME}${i}.qcow2 --run-command 'growpart /dev/sda 1' --run-command 'resize2fs /dev/sda1'
 
     virt-customize -a ${CLUSTERNAME}${i}.qcow2 \
     --root-password password:virtpassword \
