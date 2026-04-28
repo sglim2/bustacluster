@@ -34,7 +34,8 @@ do
       }
     ' ; done ))
   echo "${IPS[*]}"
-  sleep 10
+  sleep ${sleeptime}
+  ((istep++))
   if [ $istep -ge "$steplimit" ] ; then
     echo "step limit reached while waiting for VM IPs" >&2
     exit 1
