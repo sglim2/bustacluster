@@ -1,19 +1,48 @@
 #!/bin/bash 
 #
-## deploy a basic server
+# deploy a basic server
+#
+# rocky10:
+#  CLUSTERNAME=rocky10-basic IMAGENAME=rocky10 DISKSIZE=20G nVMS=1 bash deploy.sh
+#
+# ubuntu24.04:
+#  CLUSTERNAME=ubuntu24.04-basic IMAGENAME=ubuntu24.04 DISKSIZE=20G nVMS=1 CLUSTEROSVARIANT=ubuntunoble bash deploy.sh
 
 
 CLUSTERNAME=${CLUSTERNAME:='basic'}
 IMAGENAME=${IMAGENAME:='rocky10'}
-CLUSTEROSVARIANT=${CLUSTEROSVARIANT:-${IMAGENAME%%-*}}
-CLUSTERRAM=${CLUSTERRAM:=8192}
-CLUSTERVCPUS=${CLUSTERVCPUS:=6}
+CLUSTEROSVARIANT=${CLUSTEROSVARIANT:-${IMAGENAME%%-*}} 
+CLUSTERRAM=${CLUSTERRAM:=4096}
+CLUSTERVCPUS=${CLUSTERVCPUS:=4}
 DISKSIZE=${DISKSIZE:=10G}
 nVMS=${nVMS:=1}
 
 # create a vm image
 for i in $(seq 1 $nVMS); do
-  virt-builder ${IMAGENAME} --format qcow2 --root-password password:virtpassword --size=${DISKSIZE} -o ${CLUSTERNAME}${i}.qcow2
+  if [[ "$IMAGENAME" =~ ^(ubuntu|debian) ]]; then
+    # for ubuntu and debian, we need to set the username and password
+    virt-builder ${IMAGENAME} --format qcow2 -o ${CLUSTERNAME}${i}.qcow2
+    qemu-img resize ${CLUSTERNAME}${i}.qcow2 ${DISKSIZE}
+
+    virt-customize -a ${CLUSTERNAME}${i}.qcow2 \
+    --root-password password:virtpassword \
+    --run-command 'passwd -u root || true' \
+    --run-command 'ssh-keygen -A || true' \
+    --run-command 'systemctl enable ssh || systemctl enable ssh.service || true' \
+    --run-command 'systemctl enable qemu-guest-agent || true' \
+    --run-command 'mkdir -p /etc/ssh/sshd_config.d' \
+    --run-command "cat > /etc/ssh/sshd_config.d/99-bustacluster-root-login.conf <<'EOF'
+PermitRootLogin yes
+PasswordAuthentication yes
+PubkeyAuthentication yes
+EOF" \
+    --run-command 'rm -f /etc/machine-id' \
+    --run-command 'touch /etc/machine-id'
+
+  else
+    # assuming RHEL-based
+    virt-builder ${IMAGENAME} --format qcow2 --root-password password:virtpassword --size=${DISKSIZE} -o ${CLUSTERNAME}${i}.qcow2
+  fi
   qemu-img info ${CLUSTERNAME}${i}.qcow2
   virt-install --name ${CLUSTERNAME}${i} --memory ${CLUSTERRAM} --noautoconsole --vcpus ${CLUSTERVCPUS} --disk  ${CLUSTERNAME}${i}.qcow2 --import --os-variant ${CLUSTEROSVARIANT} --network bridge=virbr0
 done

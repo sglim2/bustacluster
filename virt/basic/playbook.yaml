@@ -4,23 +4,23 @@
     ansible_python_interpreter: /usr/bin/python3
 
   tasks:
-  - name: Add epel-release repo
+  - name: Add epel-release repo - RHEL
     ansible.builtin.dnf:
       name: epel-release
       state: present
+    when: ansible_os_family	== "RedHat"
 
-  - name: enable powertools 
+  - name: enable powertools - RHEL 8
     ansible.builtin.command:  
       cmd: dnf config-manager --set-enabled powertools
-    when: ansible_distribution_major_version == "8"
-#      warn: false
+    when: ansible_distribution_major_version == "8" and ansible_os_family == "RedHat"
 
-  - name: enable powertools 
+  - name: enable powertools - RHEL 9
     ansible.builtin.command:  
       cmd: dnf config-manager --set-enabled crb
-    when: ansible_distribution_major_version == "9"
+    when: ansible_distribution_major_version == "9" and ansible_os_family == "RedHat"
 
-  - name: Add additional packages
+  - name: Add additional packages - RHEL
     ansible.builtin.dnf:
       name: 
         - bash-completion
@@ -31,12 +31,29 @@
         - net-tools
         - nfs-utils
       state: present
+    when: ansible_os_family	== "RedHat"
+
+
+  - name: Add additional packages - Debian
+    ansible.builtin.apt:
+      name: 
+        - bash-completion
+        - bind9-utils
+        - git
+        - openssh-client
+        - net-tools
+        - nfs-common
+      state: present
+    when: ansible_os_family	== "Debian"
+
 
   - name: launch firewalld
     service: name=firewalld state=started enabled=yes
+    when: ansible_os_family == "RedHat"
 
   - name: set firewalld default zone to 'trusted'
     command: firewall-cmd --set-default-zone=trusted
+    when: ansible_os_family == "RedHat"
     
 #  - name: Copy ssh config
 #    copy:
