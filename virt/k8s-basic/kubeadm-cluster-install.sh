@@ -63,8 +63,8 @@ kubeMAJVER=$(echo $kubeVER | cut -d. -f1,2)
 maxpods=${maxpods:=110}
 
 
-podCIDR=${podCIDR:=192.168.192.0/19}
-svcCIDR=${svcCIDR:=192.168.224.0/19}
+podCIDR=${podCIDR:=192.168.224.0/19}
+svcCIDR=${svcCIDR:=192.168.240.0/19}
 
 
 #####
@@ -116,20 +116,32 @@ EOF_base_packages
 done
 
 # Firewall from k8s internal networks =====================
-for i in ${nodes[@]} ; do ssh $i "( systemctl enable --now firewalld )" ; done
-for i in ${nodes[@]} ; do ssh $i "( firewall-cmd --zone=trusted --add-source=${podCIDR})" ; done
-for i in ${nodes[@]} ; do ssh $i "( firewall-cmd --zone=trusted --add-source=${svcCIDR})" ; done
-for i in ${nodes[@]} 
-do
-  for j in ${nodesIP[@]} 
-  do 
-    ssh $i "( firewall-cmd --zone=trusted --add-source=$j)" 
-  done
-done
+echo "=================================="
+echo "Firewalld: set trusted networks.."
+echo "=================================="
+echo "Firewalld: enable"
+for i in ${nodes[@]} ; do ssh $i " systemctl enable --now firewalld " ; done
+echo "Firewalld: set podCIDR as trusted source"
+for i in ${nodes[@]} ; do ssh $i " firewall-cmd --zone=trusted --add-source=${podCIDR} --permanent" ; done
+echo "Firewalld: set svcCIDR as trusted source"
+for i in ${nodes[@]} ; do ssh $i " firewall-cmd --zone=trusted --add-source=${svcCIDR} --permanent" ; done
+#echo "Firewalld: cycle through cluster VM IPs"
+#for i in ${nodes[@]} 
+#do
+#  for j in ${nodesIP[@]} 
+#  do 
+#    ssh $i " firewall-cmd --zone=trusted --add-source=$j --permanent" 
+#  done
+#done
 # assume all nodes have the same interface name
 NIC=$(ssh ${nodes[0]} "ip -o addr show | grep ${nodesIP[0]} | awk '{print \$2}'")
-for i in ${nodes[@]} ; do ssh $i "firewall-cmd --zone=trusted --add-interface=$NIC --permanent; firewall-cmd --reload" ; done
-for i in ${nodes[@]} ; do ssh $i "( firewall-cmd --runtime-to-permanent)" ; done
+echo "Firewalld: set VM NIC $NIC as trusted source"
+for i in ${nodes[@]} ; do ssh $i "firewall-cmd --zone=trusted --add-interface=$NIC --permanent" ; done 
+for i in ${nodes[@]} ; do ssh $i "firewall-cmd --reload" ; done
+
+echo "Firewalld report....." 
+for i in ${nodes[@]} ; do ssh $i " firewall-cmd --list-all --zone=public ; firewall-cmd --list-all --zone=trusted " ; done
+echo "=================================="
 # ==========================================================
 
 # for testing only

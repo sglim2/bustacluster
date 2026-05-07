@@ -3,8 +3,8 @@
 
 #================================================================================================
 # kubeadm
-podCIDR=${podCIDR:=192.168.192.0/19}
-svcCIDR=${svcCIDR:=192.168.224.0/19}
+podCIDR=${podCIDR:=192.168.224.0/20}
+svcCIDR=${svcCIDR:=192.168.240.0/20}
 
 CLUSTERNAME=${CLUSTERNAME:=k8s}
 withCNI=${withCNI:=cilium}
@@ -45,8 +45,8 @@ echo "=================================="
 #
 # The ansible playbook has already copied the kubeadm-cluster-install.sh script to the first node.
 ssh root@${IPS[0]} <<EOF_kubeadm
-echo kubeVER=$kubeVER withMETRICS=$withMETRICS withPROMETHEUS=$withPROMETHEUS CLUSTERNAME=$CLUSTERNAME withCNI=$withCNI maxpods=$maxpods nodes="$(echo ${IPS[@]})" nodesIP="$(echo ${IPS[@]})" /root/kubeadm-cluster-install.sh
-kubeVER=$kubeVER withMETRICS=$withMETRICS withPROMETHEUS=$withPROMETHEUS CLUSTERNAME=$CLUSTERNAME withCNI=$withCNI maxpods=$maxpods nodes="$(echo ${IPS[@]})" nodesIP="$(echo ${IPS[@]})" /root/kubeadm-cluster-install.sh
+echo podCIDR=$podCIDR svcCIDR=$svcCIDR kubeVER=$kubeVER withMETRICS=$withMETRICS withPROMETHEUS=$withPROMETHEUS CLUSTERNAME=$CLUSTERNAME withCNI=$withCNI maxpods=$maxpods nodes="$(echo ${IPS[@]})" nodesIP="$(echo ${IPS[@]})" /root/kubeadm-cluster-install.sh
+podCIDR=$podCIDR svcCIDR=$svcCIDR kubeVER=$kubeVER withMETRICS=$withMETRICS withPROMETHEUS=$withPROMETHEUS CLUSTERNAME=$CLUSTERNAME withCNI=$withCNI maxpods=$maxpods nodes="$(echo ${IPS[@]})" nodesIP="$(echo ${IPS[@]})" /root/kubeadm-cluster-install.sh
 EOF_kubeadm
 
 #================================================================================================
