@@ -126,7 +126,7 @@ Get data (again cert flags are required):
 etcdctl --endpoints=https://127.0.0.1:2379 --cert=/etc/kubernetes/pki/etcd/server.crt --key=/etc/kubernetes/pki/etcd/server.key --cacert=/etc/kubernetes/pki/etcd/ca.crt get course
 ``` 
 
-### Exercise: on a node that is not already running etcd, download binaries and start an etcd service. Try interacting with this etcd instance with TLS. If the messages are indeed unencrypted, try sniffing the traffic with tcpdump. Then enable TLS and repeat the process, observing the differences in the captured traffic.
+### Exercise: On a node that is not already running etcd, download binaries and start an etcd service. Try interacting with this etcd instance with and without TLS. If the messages are unencrypted, try sniffing the traffic with tcpdump. Then enable TLS and repeat the process, observing the differences in the captured traffic.
 
 Log out of the control-plane node and log into a worker node, which is not running etcd. Download and install the etcd binaries and start an etcd instance with TLS disabled:
 
