@@ -80,32 +80,183 @@ Sign the client certificate with the Kubernetes cluster CA
 openssl x509 -req -in testuser.csr -CA /etc/kubernetes/pki/ca.crt -CAkey /etc/kubernetes/pki/ca.key -CAcreateserial -out testuser.crt -days 365
 ```
 
-This creates the client certificate `testuser.crt`, which is signed by the Kubernetes cluster CA, so is therefore trusted by the api-server for this cluster. The certificate will be valid for 365 days, and will use SHA-256 for signing. 
-inspect the crt with:
+This creates the client certificate `testuser.crt`, which is signed by the Kubernetes cluster CA, so is therefore trusted by the api-server for this cluster. The certificate will be valid for 365 days.
+
+Inspect the crt with:
 ```
 openssl x509 -in testuser.crt -text -noout
 ``` 
-..and look for the Subject field, which should show the CN and O values we specified.
-```
+..and look for the `Subject` field, which should show the `CN` and `O` values we specified.
 
 
+## Use the client certificate with kubectl
 
-
-
-
-
-
-
-
-
-
-Create a client certificate and key for authentication to the kube-apiserver. The kubernetes cluster itself will have a certificate authority (CA) that can be used to sign the client certificate.
+At this point we have created three files:
 
 ```
-# Generate a private key for the client certificate
-openssl genrsa -out client.key 2048
-# Create a certificate signing request (CSR) for the client certificate
-openssl req -new -key client.key -out client.csr -subj "/CN=client/O=group"
-# Sign the client certificate with the Kubernetes cluster's CA
-openssl x509 -req -in client.csr -CA /path/to/ca.crt -CAkey /path/to/ca.key -CAcreateserial -out client.crt -days 365
+testuser.key
+testuser.csr
+testuser.crt
 ```
+
+The CSR was only needed for certificate creation. For day-to-day authentication to Kubernetes, the useful files are:
+```
+testuser.key : the client private key, which should be kept secure and private
+testuser.crt : the client certificate, which can be shared with the API server for authentication
+ca.crt : the cluster CA certificate, which is needed to verify the API server's identity during TLS handshake, and can be embedded in kubeconfig files
+```
+
+Kubernetes client-certificate authentication works by presenting the client certificate during the TLS connection to the API server. The API server checks that the certificate was
+signed by a trusted `CA`, then maps the certificate subject into a Kubernetes identity. The `CN` becomes the username and the `O` field becomes the group membership. 
+Kubernetes then passes that identity to the authorization layer, such as RBAC. 
+
+Authentication and authorization are separate, so a valid certificate proves that `testuser` is a real Kubernetes identity, but it does not automatically grant any permissions.
+
+### Create a kubeconfig for the x509 user
+
+A kubeconfig contains:
+  * cluster details
+  * user credentials
+  * context information tying the user to the cluster
+
+Create a dedicated kubeconfig for testuser:
+
+```
+APISERVER=$(kubectl config view -ojsonpath='{.clusters[0].cluster.server}')
+echo "$APISERVER"
+```
+
+Now create the kubeconfig. All of the following 4 commands are required to set up a working kubeconfig file.
+
+The following sets up the server credentials only:
+
+```
+kubectl config set-cluster testcluster \
+  --server="$APISERVER" \
+  --certificate-authority=/etc/kubernetes/pki/ca.crt \
+  --embed-certs=true \
+  --kubeconfig=testuser.kubeconfig
+```
+
+Now add the x509 user credentials:
+
+```
+kubectl config set-credentials testuser \
+  --client-certificate=testuser.crt \
+  --client-key=testuser.key \
+  --embed-certs=true \
+  --kubeconfig=testuser.kubeconfig
+```
+
+Create a context:
+
+```
+kubectl config set-context testuser@testcluster \
+  --cluster=testcluster \
+  --user=testuser \
+  --kubeconfig=testuser.kubeconfig
+```
+
+Set the context as default:
+
+```
+kubectl config use-context testuser@testcluster \
+  --kubeconfig=testuser.kubeconfig
+```
+
+This is now a complete kubeconfig file that can be used to authenticate to the Kubernetes API server as `testuser` using the x509 client certificate.
+
+Inspect the kubeconfig:
+
+```
+kubectl config view --kubeconfig=testuser.kubeconfig
+```
+
+Because `--embed-certs=true` was used, the certificate and key data are embedded directly in the kubeconfig as base64-encoded values:
+
+```
+client-certificate-data: ...
+client-key-data: ...
+certificate-authority-data: ...
+```
+
+This is convenient for portability, but it also means the kubeconfig now contains private key material. Treat this file as sensitive.
+
+Set safer permissions:
+
+```
+chmod 600 testuser.kubeconfig
+```
+
+## Test Authentication with the new kubeconfig
+
+Try to query the cluster using the new kubeconfig:
+
+```
+kubectl get nodes --kubeconfig=testuser.kubeconfig
+```
+
+THis should fail with a permissions error. Something like:
+
+```
+Error from server (Forbidden): nodes is forbidden: User "testuser" cannot list resource "nodes" in API group "" at the cluster scope
+```
+
+This is expected, Kubernetes recognised the certificate identity as testuser, but RBAC has not granted that user permission to list pods.
+
+## Confirm the Kubernetes identity
+
+Use kubectl `auth whoami`:
+
+```
+kubectl --kubeconfig=testuser.kubeconfig auth whoami
+```
+
+Expected output is:
+
+```
+ATTRIBUTE                                           VALUE
+Username                                            testuser
+Groups                                              [testgroup system:authenticated]
+Extra: authentication.kubernetes.io/credential-id   [X509SHA256=........]
+```
+
+Note: Kubernetes also commonly adds authenticated users to the built-in group `system:authenticated`.
+
+## Brief RBAC test
+
+It is useful to prove that the certificate identity can be authorized. Create a very limited Role allowing testuser to list pods in the default namespace:
+
+```
+kubectl create role testuser-pod-reader --verb=get,list,watch --resource=pods --namespace=default
+```
+
+Bind the Role to the x509 user:
+
+```
+kubectl create rolebinding testuser-pod-reader-rolebinding --role=testuser-pod-reader --user=testuser --namespace=default
+```
+
+Now try:
+
+```
+kubectl --kubeconfig=testuser.kubeconfig get pods -n default
+```
+
+You should witness a successful response, even if no pods are present. Test witha different kubernetes resouce:
+
+```
+kubectl --kubeconfig=testuser.kubeconfig get secrets -n default
+```
+
+The command is expected to fail with a permissions error, because the Role does not allows access to secrets:
+
+
+## Test the Certificate directly with curl
+
+
+
+
+
+
+
