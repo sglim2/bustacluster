@@ -11,12 +11,21 @@ The clusters are not designed as production quality, and will often lack feature
 
 - virt-localrepo (github.com/sglim2/virt-localrepo.git)
 - libvirt
-- guestfs-tool (virt-builder)
+- guestfs-tools (virt-builder)
 - ansible
 
 ## Example
 
-Assuming a suitbale virt-builder image is available (see github.com/sglim2/virt-localrepo.git on how to build a local virt-builder repo)..
+On first use, you may need to enable the libvirt bridge:
+
+```
+# if necessary, enable the default libvirt bridge
+sudo virsh net-autostart default
+sudo virsh net-start default
+# or you may need to create one if it doesn't exist
+```
+
+Assuming a suitable virt-builder image is available (see github.com/sglim2/virt-localrepo.git on how to build a local virt-builder repo)..
 
 ```bash
 cd virt/k8s-basic
