@@ -52,7 +52,7 @@ withMETRICS=${withMETRICS:=0}
 
 # 1.21.5
 # 1.22.2
-kubeVER=${kubeVER:=1.23.7}
+kubeVER=${kubeVER:=1.36.1}
 # get the major version, e.g. 1.23.7 -> 1.23 
 #   (1.23 -> 1.23  also works with the below code)
 kubeMAJVER=$(echo $kubeVER | cut -d. -f1,2)
@@ -182,7 +182,7 @@ EOF
   curl -fsSL https://pkgs.k8s.io/core:/stable:/v${kubeMAJVER}/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
   chmod 644 /etc/apt/keyrings/kubernetes-apt-keyring.gpg 
 
-  echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.36/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
+  echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${kubeMAJVER}/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
   chmod 644 /etc/apt/sources.list.d/kubernetes.list 
 
   apt-get update
