@@ -1,4 +1,4 @@
-# Upgrading kubeadm cluster 
+
 
 At the time of writing, the lastest stable version of kubernetes is 1.36.1. The kubeadm, kubectl and kubelet version of the cluster is 1.34.8.
 This scenario will upgrade the kubeadm cluster 1.34.8->1.35.X->1.36.1.
@@ -34,7 +34,7 @@ General flow is:
     * upgrade kubelet and kubectl, 
     * then uncordon the node.
 
-## Upgrade kubeadm control-plane nodes 1.34.8->1.35.X
+## Upgrade kubeadm control-plane node 1.34.8->1.35.X  (the first conrol-plane node ONLY)
 
 For each node (control-plane and worker nodes), check the installed kubeadm, kubelet and kubectl version, and check what versions are currently available in the apt repository (assuming ubuntu OS).
 
@@ -195,20 +195,92 @@ kubectl version
 kubectl get nodes 
 ```
 
+## Upgrade additional control-plane nodes (if they exist)
+
+Perform the same actions as the first control-plane node, except for the `kubeadm upgrade apply` step (which should on only be
+run on the first control-plane node), replace the ncommand with:
+
+```
+kubeadm upgrade node
+```
+
+The kubeadm upgrade process will have already upgraded the cluster components, so the second control-plane node will just need to have kubeadm, kubelet and kubectl upgraded.
+
+
 ## Upgrade kubeadm worker nodes 1.34.8->1.35.X
 
-For the worker nodes, follow the same process for upgrade:
-    1. drain the node (one at a time so workloads can shift to alternate worker nodes), 
-    2. point the package manager to the updated kubernetes repo 
-    3. remove any package holds, e.g. kubeadm, kubelet, kubectl. (But kubeadm/kubectl may not be relevant on the worker nodes, depending on how the cluster was set up.)
-    4. upgrade kubelet, and kubeadm/kubectl if relevant. 
+(It is entirely possible that the control-plane node(s) is untainted to allow workloads to run on it.)
+
+For the worker nodes, follow the similar process for upgrade:
+    1. point the package manager to the updated kubernetes repo 
+    2. remove any package holds, e.g. kubeadm, kubelet, kubectl.
+    4. upgrade the `node`: ```kubeadm upgrade node``` (upgrades the local kubelet configuration). 
+    3. drain the node (one at a time so workloads can shift to alternate worker nodes. If many worker nodes exist, a few at a time is also possible).
     5. then uncordon the node.
-    6. replace the package holds on kubeadm, kubelet and kubectl if they were removed.
+    6. re-add the package holds on kubeadm, kubelet and kubectl if they were removed.
 
-    
+For kicks, let's put some pods onto the cluster:
 
+```
+for i in $(seq 1 20) ; do kubectl create deployment workload$i --image=nginx ; done
+#
+# watch the pods in a separate terminal, and see how they move around in the cluster as nodes are drained and uncordoned.
+watch -d "kubectl get pods -o wide --sort-by=.spec.nodeName
+# or 
+kubectl get pods -o wide --sort-by=.spec.nodeName -w
+```
 
+```
+# edit the package manager kubernetes repos to pont to the target version (e.g. v1.35)
+apt update
+apt-mark unhold kubeadm
+apt install kubeadm="1.35.5*" 
+apt-mark hold kubeadm
+```
 
+Perform the upgrade on the worker node:
 
+```
+kubeadm upgrade node
+```
 
+This command will upgrade the local kubelet configuration.
 
+Drain the node:
+
+```
+kubectl drain k8s-v1.34-ubuntu2 --ignore-daemonsets
+# and watch all the pods (managed by a deployment) move to other nodes in the cluster
+```
+
+Upgrade kubelet and kubectl:
+
+```
+apt-mark unhold kubelet kubectl
+apt install kubelet="1.35.5*" kubectl="1.35.5*"
+apt-mark hold kubelet kubectl
+```
+
+Restart the kubelet:
+
+```
+systemctl daemon-reload
+systemctl restart kubelet
+```
+
+Uncordon to return the node to service:
+
+```
+kubectl uncordon k8s-v1.34-ubuntu2
+# but notice no workloads return to this worker node - this is expected.
+```
+
+A quick check:
+```
+# this should report the kubelet version has been updated for that worker node
+kubectl get nodes
+NAME                STATUS   ROLES           AGE   VERSION
+k8s-v1.34-ubuntu1   Ready    control-plane   47h   v1.35.5
+k8s-v1.34-ubuntu2   Ready    <none>          47h   v1.35.5
+k8s-v1.34-ubuntu3   Ready    <none>          47h   v1.34.8
+```
