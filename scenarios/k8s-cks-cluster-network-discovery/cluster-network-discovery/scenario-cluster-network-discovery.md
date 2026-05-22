@@ -51,7 +51,7 @@ Create two pods on the same node, and set up some data tranfer between the two:
 kubectl create ns nginx1
 kubectl run nginx --image=nginx:latest -n nginx1 --port=80 --restart=Never --overrides='{"spec":{"nodeName":"k8s-ubuntu3"}}'
 kubectl expose pod nginx -n nginx1 --port=80 --target-port=80  --name=nginx-svc
-kubectl run curl --image=curlimages/curl:latest -n nginx1 --restart=Never --overrides='{"spec":{"nodeName":"k8s-ubuntu3"}}' --  /bin/sh -c "while true ; do sleep 0.1 ; curl nginx-svc.nginx1.svc.cluster.local ; done"
+kubectl run curl --image=curlimages/curl:latest -n nginx1 --restart=Never --overrides='{"spec":{"nodeName":"k8s-ubuntu3"}}' --  /bin/sh -c "while true ; do sleep 10 ; curl nginx-svc.nginx1.svc.cluster.local ; done"
 ```
 
 
@@ -88,19 +88,19 @@ Identify the DNS:
 kubectl get svc -n kube-system kube-dns -o wide
 kubectl get pods -n kube-system -l k8s-app=kube-dns -o wide
 #
-DNS_SVC_IP=$(kubectl get svc kube-dns -n kube-system -o jsonpath='{.spec.clusterIP}')
+IPdns=$(kubectl get svc kube-dns -n kube-system -o jsonpath='{.spec.clusterIP}')
 ```
 
 #### Task 1. Do the Pods use DNS?
 
-Does the curl Pod use Kubernetes DNS to resolve: `nginx-svc.nginx1.svc.cluster.local`? ... Well the obvious answer is `yes` unless something like `/etc/hosts` is being used, but let's confirm it by looking at the traffic.
+Does the curl Pod use Kubernetes DNS to resolve: `nginx-svc.nginx1.svc.cluster.local`? ... Very likely since the target is a domain name, unless something like `/etc/hosts` is being used, but let's confirm it by looking at the traffic.
 
 ```
 # Inspect the pod's dns configuration:
 kubectl exec -n nginx1 curl -- cat /etc/resolv.conf
 ```
 
-The expected output should be the nameserver pointing to `$DNS_SVC_IP` and the search domain likely includes all 3 of `[namespace].svc.cluster.local`, `svc.cluster.local`, and `cluster.local`. This would 
+The expected output should be the nameserver pointing to `$IPdns` and the search domain likely includes all 3 of `[namespace].svc.cluster.local`, `svc.cluster.local`, and `cluster.local`. This would 
 confirm
   - The Pod is configured to use the Kubernetes DNS Service.
   - The nameserver is usually the kube-dns/CoreDNS ClusterIP.
@@ -119,7 +119,7 @@ However, to be more certain that the Pod is actually sending DNS queries to the 
 On the worker node, use `tcpdump` to capture DNS traffic:
 
 ```
-tcpdump -ni any "udp port 53 or tcp port 53"
+timeout 10s tcpdump -ni any "udp port 53 or tcp port 53"
 ```
 This gives information like:
 ```
@@ -135,7 +135,12 @@ This gives information like:
 22:30:45.020332 lxcfe7fb04b3014 Out IP 192.168.226.17.34263 > 192.168.226.224.53: 61588+ AAAA? nginx-svc.nginx1.svc.cluster.local. (52)
 ```
 
-If `IPcurl` is `192.168.226.17`, and `DNS_SVC_IP` is `192.168.240.10` (also recognised in the output from the port `53` references), then we can see that the curl Pod is sending DNS queries to the DNS service IP, and receiving responses from it. This confirms that the Pod is using DNS for name resolution. This output also provide information about the interfaces involved in the DNS traffic. The `cilium_vxlan` interface is likely the CNI bridge or overlay interface, and the `lxc25fed2932472` interface is likely the veth pair for the curl Pod. The fact that we see traffic on both interfaces suggests that the DNS queries are being sent from the curl Pod, going through the CNI bridge, and reaching the DNS service.
+If `IPcurl` is `192.168.226.17`, and `IPdns` is `192.168.240.10` (also recognised in the output from the port `53` references), then we can see that the curl Pod is sending DNS queries to the DNS service IP, and receiving responses from it. This confirms that the Pod is using DNS for name resolution. This output also provide information about the interfaces involved in the DNS traffic. The `cilium_vxlan` interface is likely the CNI bridge or overlay interface, and the `lxc25fed2932472` interface is likely the external side of the veth pair for the curl Pod (the other end sitting inside the Pod's network namespace - usually named eth0). The fact that we see traffic on both interfaces (`cilium_vxlan` and `lxc25fed2932472`) suggests that the DNS queries are being sent from the curl Pod, going through the CNI bridge, and reaching the DNS service.
 
 The interface `lxc25fed2932472` will reside on the worker node where the curl Pod is running (check this by logging in to the relevant worker node and search with `ip a`), and it will be part of a veth pair that connects the Pod's network namespace to the host network. The `cilium_vxlan` interface is likely part of the CNI overlay network that allows communication between Pods across different nodes. 
+
+
+
+
+
 
