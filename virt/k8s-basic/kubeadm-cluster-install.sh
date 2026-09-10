@@ -155,7 +155,8 @@ echo disable swap
 for i in ${nodes[@]} ; do ssh $i "(swapoff -a; sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab)" ; done
 
 echo "install container runtime"
-ID_LIKE=$(ssh ${nodes[0]} cat /etc/os-release | grep ID_LIKE | awk -F= '{print $2}')
+#ID_LIKE=$(ssh ${nodes[0]} cat /etc/os-release | grep ID_LIKE | awk -F= '{print $2}')
+ID_LIKE=$(ssh "${nodes[0]}" '. /etc/os-release; printf "%s\n" "$ID_LIKE"')
 for i in ${nodes[@]} ; do 
 ssh $i <<EOF_allnodes
 
