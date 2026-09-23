@@ -3,7 +3,7 @@
 Create a `k8s-basic` cluster with no CNI.
 
 ```
-CLUSTERNAME=k8s-ebpf withCNI=cilium IMAGENAME=rocky10 CLUSTEROSVARIANT=rocky10 CLUSTERRAM=8192 CLUSTERVCPUS=4 DISKSIZE=20G nVMS=3 bash deploy.sh
+CLUSTERNAME=k8s-ebpf withCNI=cilium withPROMETHEUS=1 withMETRICS=1 IMAGENAME=rocky10 CLUSTEROSVARIANT=rocky10 CLUSTERRAM=4096 CLUSTERVCPUS=4 DISKSIZE=20G nVMS=3 bash deploy.sh
 ```
 
 ```
@@ -11,9 +11,9 @@ CLUSTERNAME=k8s-ebpf withCNI=cilium IMAGENAME=rocky10 CLUSTEROSVARIANT=rocky10 C
 nodes=(192.168.122.164 192.168.122.217 192.168.122.245)
 ```
 
-```kubectl get nodes``` should show the 3 nodes in NotReady state.
+```kubectl get nodes``` should show the 3 nodes in Ready state.
 
-Let's also enable the hubble relay:
+Let's also enable the hubble relay. On the control plande node:
 
 ```
 cilium hubble enable
