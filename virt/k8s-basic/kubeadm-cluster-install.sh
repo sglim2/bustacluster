@@ -214,13 +214,13 @@ else
 
   # new repo location - 2024 onwards
   sudo tee /etc/yum.repos.d/kubernetes.repo <<EOF
-  [kubernetes]
-  name=Kubernetes
-  baseurl=https://pkgs.k8s.io/core:/stable:/v${kubeMAJVER}/rpm/
-  enabled=1
-  gpgcheck=1
-  gpgkey=https://pkgs.k8s.io/core:/stable:/v${kubeMAJVER}/rpm/repodata/repomd.xml.key
-  exclude=kubelet kubeadm kubectl cri-tools kubernetes-cni
+[kubernetes]
+name=Kubernetes
+baseurl=https://pkgs.k8s.io/core:/stable:/v${kubeMAJVER}/rpm/
+enabled=1
+gpgcheck=1
+gpgkey=https://pkgs.k8s.io/core:/stable:/v${kubeMAJVER}/rpm/repodata/repomd.xml.key
+exclude=kubelet kubeadm kubectl cri-tools kubernetes-cni
 EOF
 
   echo "###################"
