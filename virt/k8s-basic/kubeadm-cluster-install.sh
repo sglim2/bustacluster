@@ -63,8 +63,8 @@ kubeMAJVER=$(echo $kubeVER | cut -d. -f1,2)
 maxpods=${maxpods:=110}
 
 
-podCIDR=${podCIDR:=192.168.224.0/19}
-svcCIDR=${svcCIDR:=192.168.240.0/19}
+podCIDR=${podCIDR:=192.168.224.0/20}
+svcCIDR=${svcCIDR:=192.168.240.0/20}
 
 
 #####
