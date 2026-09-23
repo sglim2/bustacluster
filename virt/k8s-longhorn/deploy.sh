@@ -10,14 +10,14 @@ CLUSTERNAME=${CLUSTERNAME:=lh}
 withCNI=${withCNI:=cilium}
 withPROMETHEUS=${withPROMETHEUS:=0}
 withMETRICS=${withMETRICS:=0}
-kubeVER=${kubeVER:=1.32.0}
+kubeVER=${kubeVER:=1.32.2}
 maxpods=${maxpods:=110}
 
 
 nVMS=${nVMS:=3}
-IMAGENAME=${IMAGENAME:='rocky9'}
+IMAGENAME=${IMAGENAME:='rocky10'}
 
-longhornVER=${longhornVER:=v1.8.1}
+longhornVER=${longhornVER:=v1.12.1}
 longhornDISKSIZE=${longhornDISKSIZE:=50G}
 
 source ../k8s-basic/deploy.sh
