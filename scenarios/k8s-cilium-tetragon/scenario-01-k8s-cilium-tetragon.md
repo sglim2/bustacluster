@@ -41,37 +41,37 @@ The following diagram illustrates the architecture:
 
 ```
 
-                         Kubernetes API
-                              │
-                              │ pod metadata
-                              ▼
- ┌─────────────────────────────────────────────────────┐
- │                    worker node                      │
- │                                                     │
- │   linux-playground Pod                              │
- │  ┌────────────────────────────────────────────┐     │
- │  │ sshd                                       │     │
- │  │   └── student01 UID e.g. 2001              │     │
- │  │       ├── bash                             │     │
- │  │       └── other commands                   │     │
- │  └────────────────────────────────────────────┘     │
- │                        │                            │
- │                        │ kernel events              │
- │                        ▼                            │
- │                 Linux kernel/eBPF                   │
- │                        │                            │
- │                        ▼                            │
- │  ┌────────────────────────────────────────────┐     │
- │  │ Tetragon DaemonSet                         │     │
- │  │                                            │     │
- │  │ process_exec                               │     │
- │  │ process_exit                               │     │
- │  │ Kubernetes enrichment                      │     │
- │  └────────────────────┬───────────────────────┘     │
- └───────────────────────┼─────────────────────────────┘
-                         │
-                         ▼
-                      JSON events
+             one Kubernetes node
+
+ Student workload
+      │
+      ├─────────────────────────┐
+      │                         │
+      ▼                         ▼
+ Tetragon/eBPF            Linux taskstats
+      │                         │
+ process_exec                   │ process exit
+ process_exit                   │ AGGR_TGID
+      │                         │
+      ▼                         ▼
+ /var/run/tetragon/       Generic Netlink
+ tetragon.sock                  │
+      │                         │
+      └─────────┐   ┌───────────┘
+                ▼   ▼
+         resource-accounting
+                │
+       PID/TGID correlation
+                │
+                ▼
+        Tetragon exec_id
+        + Kubernetes identity
+        + final taskstats
+                │
+                ▼
+             JSON
+             stdout
+
 ```
 
 At this point we should check that the nodes expose the kernel BTF:
@@ -251,7 +251,7 @@ jq -c '
 '
 ```
 
-This deserves some explanation: The `kubectl logs` command is obviously inspected the tetragon pod logs. These logs are in the handy JSON format, so we process them to show only what we want.
+These logs are in the handy JSON format, so we process them to show only what we want.
 
 
 Tetragon's normal process execution event contains fields including:
@@ -284,7 +284,7 @@ A typical result would look like:
 {"event":"exec","exec_id":"azhzLWVicGYyOjQ4MjU4NzAzMjk5ODQ6NTg1NQ==","uid":2001,"pid":5855,"binary":"/usr/bin/sleep","arguments":"3","cwd":"/home/student","start_time":"2026-09-27T23:04:10.440057712Z","namespace":"linux-playground","pod":"linux-playground","container":"linux-playground"}
 ```
 
-We can extend this usefule information by also looking at the process exit events. The following command will show both exec and exit events:
+We can extend this useful information by also looking at the process exit events. The following command will show both exec and exit events:
 
 ```
 kubectl logs -n kube-system -l app.kubernetes.io/name=tetragon -c export-stdout --max-log-requests=10 -f |
@@ -313,8 +313,20 @@ jq -c '
 And a typical output would be something like:
 
 ```
+{"event":"exit","exec_id":"azhzLWVicGYyOjUxNzE5ODk1MjI5Mjg0MjoxMjc4OTk=","uid":2001,"pid":127899,"binary":"/usr/bin/sleep","start_time":"2026-09-29T10:12:25.582357929Z","exit_status":null,"signal":null,"namespace":"linux-playground","pod":"linux-playground"}
+{"event":"exit","exec_id":"azhzLWVicGYyOjUxNzM0MTcwNjYzNTcyMToxMjc5MTk=","uid":2001,"pid":127919,"binary":"/usr/bin/stress-ng","start_time":"2026-09-29T10:14:48.336701084Z","exit_status":null,"signal":null,"namespace":"linux-playground","pod":"linux-playground"}
+```
+
+Each tetragon pod will have 2 containers:
 
 ```
+kubectl get pod tetragon-h7fdt -n kube-system -o jsonpath='{range .spec.containers[*]}{.name}{"\n"}{end}'
+export-stdout
+tetragon
+```
+
+
+
 
 ### Filling the gaps
 
