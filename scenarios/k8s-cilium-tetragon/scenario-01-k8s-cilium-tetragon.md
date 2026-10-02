@@ -335,7 +335,7 @@ write_syscalls
 
 This information would give use a more complete picture of the resource usage of each process, which is important for our target of performance analysis and optimization.
 
-This is where Tetragon stops being the complete solution. However, we can expand on Tetragon's `runtime security observability`, with our own `resource accounting` solution, which is more akin to traditional `performance monitoring` tools.
+This is where Tetragon stops being the complete solution. However, we can expand on Tetragon's `runtime security observability`, with our own `resource accounting` solution, which will be more akin to traditional `performance monitoring` tools.
 
 
 
