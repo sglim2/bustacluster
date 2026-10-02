@@ -331,7 +331,7 @@ tetragon
 ### Filling the gaps
 
 Tetragon already provides a lot of information, but it does not provide many of the resource accounting data that we may be interested in. 
-Tetragon's built-in lifecycle events tell us what happened, but does not expose a complete final resource-consumption structure above. For instance,
+Tetragon's built-in lifecycle events tell us what happened (who, when, where), but does not expose a complete final resource-consumption (how much). For instance,
 we may want to know information such as:
 
 ```
